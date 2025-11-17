@@ -36,7 +36,7 @@ Seurat v5 기반으로 구현했으며, 배치 효과 제거와 세포 타입별
 
 ## Imaging Mass Cytometry Analysis
 
-피부 조직의 spatial proteomics 분석 파이프라인입니다. 
+피부 조직의 spatial proteomics 분석 파이프라인 예시시입니다. 
 Steinbock 기반 전처리와 Python 기반 공간 분석을 결합하여 세포 간 상호작용 및 조직 구조 분석을 수행했습니다.
 
 ### 핵심 구현 내용
