@@ -36,8 +36,9 @@ library(patchwork)
 
 # Set parameters
 SPATIAL_PARAMS <- list(
-    groups_to_compare = c("Wt", "Ko"),   # Groups for comparison
-    min_samples       = 2,                # Minimum samples per group for testing
+    groups_to_compare = c("Wt", "Ko"),   # 비교할 그룹 (필수)
+    min_samples       = 2,                # 통계 검정을 위한 최소 샘플 수
+    min_cells         = 5,                # 거리 계산을 위한 최소 세포 수
     seed              = 900223
 )
 
@@ -52,36 +53,30 @@ if (!dir.exists("./figure/06_spatial_analysis")) {
 
 spe <- readRDS("./data/spe_filtered.rds")
 
-# Filter to comparison groups only
+# IMPORTANT: 비교할 그룹만 필터링
 spe_region <- spe[, spe$group %in% SPATIAL_PARAMS$groups_to_compare]
 
-cat(sprintf("Total cells: %d\n", ncol(spe_region)))
-cat(sprintf("Groups: %s\n", paste(unique(spe_region$group), collapse = ", ")))
-
-# Check if regions are defined
+# NOTE: region 컬럼이 없으면 에러 발생 (lisaClust 등으로 사전 분석 필요)
 if (!"region" %in% colnames(colData(spe_region))) {
     stop("Column 'region' not found. Run spatial regionalization first (e.g., lisaClust).")
 }
-
-cat(sprintf("Regions: %s\n\n", 
-            paste(sort(unique(na.omit(spe_region$region))), collapse = ", ")))
 
 ################################################################################
 # 2. Define Cell Type Categories
 ################################################################################
 
-# NOTE: Adjust these categories based on your cell type annotations
+# IMPORTANT: 본인의 cell type annotation에 맞게 수정 필요
 all_celltypes <- unique(spe_region$cluster_celltype)
 
-# Epithelial cells
+# Epithelial cells: "Epithelial" 문자열 포함
 epithelial_types <- all_celltypes[grepl("Epithelial cell", all_celltypes)]
 
-# Immune T cells
+# Immune T cells: CTL, CD4 T cell 등
 immune_types <- c("CTL", "CD4 T cell")
 immune_types <- immune_types[immune_types %in% all_celltypes]
 
-# Myeloid cells (if you have myeloid subclusters as SC1, SC2, etc.)
-# Otherwise, use generic "Myeloid cell" annotation
+# Myeloid cells: SC1-SC35 또는 "Myeloid" 포함
+# NOTE: Myeloid subcluster가 SC1, SC2 형식이면 첫 번째 조건 사용
 if (any(grepl("^SC[0-9]+$", all_celltypes))) {
     myeloid_types <- all_celltypes[grepl("^SC[0-9]+$", all_celltypes)]
 } else {
@@ -89,24 +84,14 @@ if (any(grepl("^SC[0-9]+$", all_celltypes))) {
 }
 myeloid_types <- sort(myeloid_types)
 
-cat("Cell Type Categories:\n")
-cat("=====================\n\n")
-cat(sprintf("Epithelial types (%d):\n", length(epithelial_types)))
-for (et in epithelial_types) cat("  *", et, "\n")
-cat(sprintf("\nImmune T cell types (%d):\n", length(immune_types)))
-for (it in immune_types) cat("  *", it, "\n")
-cat(sprintf("\nMyeloid types (%d):\n", length(myeloid_types)))
-for (mt in head(myeloid_types, 10)) cat("  *", mt, "\n")
-if (length(myeloid_types) > 10) cat("  * ... and", length(myeloid_types) - 10, "more\n")
-
 ################################################################################
 # 3. Define Analysis Combinations
 ################################################################################
 
-# IMPORTANT: Four categories of cell-cell interactions
+# IMPORTANT: 4가지 카테고리의 cell-cell interaction 정의
 analysis_combinations <- list()
 
-# Category 1: Immune → Epithelial
+# Category 1: Immune → Epithelial (면역세포가 종양으로 침투)
 for (immune in immune_types) {
     for (epi in epithelial_types) {
         analysis_combinations[[length(analysis_combinations) + 1]] <- 
@@ -114,7 +99,7 @@ for (immune in immune_types) {
     }
 }
 
-# Category 2: Immune → Myeloid
+# Category 2: Immune → Myeloid (T세포와 골수세포 근접도)
 for (immune in immune_types) {
     for (myeloid in myeloid_types) {
         analysis_combinations[[length(analysis_combinations) + 1]] <- 
@@ -122,7 +107,7 @@ for (immune in immune_types) {
     }
 }
 
-# Category 3: Myeloid → Immune
+# Category 3: Myeloid → Immune (골수세포와 T세포 근접도)
 for (myeloid in myeloid_types) {
     for (immune in immune_types) {
         analysis_combinations[[length(analysis_combinations) + 1]] <- 
@@ -130,7 +115,7 @@ for (myeloid in myeloid_types) {
     }
 }
 
-# Category 4: Myeloid → Epithelial
+# Category 4: Myeloid → Epithelial (골수세포가 종양으로 침투)
 for (myeloid in myeloid_types) {
     for (epi in epithelial_types) {
         analysis_combinations[[length(analysis_combinations) + 1]] <- 
@@ -138,23 +123,21 @@ for (myeloid in myeloid_types) {
     }
 }
 
-cat(sprintf("\n\nTotal analysis combinations: %d\n", length(analysis_combinations)))
-
 ################################################################################
 # 4. Region-Based Distance Calculation
 ################################################################################
 
-# NOTE: This may take several minutes to hours depending on data size
-# Progress is tracked internally
+# NOTE: 대용량 데이터의 경우 수 시간 소요 가능
+# 진행상황은 내부적으로 추적됨
 
 regions <- sort(unique(na.omit(spe_region$region)))
 within_results <- list()
 
-cat("\nStarting distance calculations...\n")
 start_time <- Sys.time()
 
 for (reg in regions) {
     
+    # 현재 region의 세포 인덱스
     region_cells <- which(spe_region$region == reg)
     available_types <- unique(spe_region$cluster_celltype[region_cells])
     
@@ -163,12 +146,12 @@ for (reg in regions) {
         to_type <- combo$to
         category <- combo$category
         
-        # Check if both cell types exist in this region
+        # IMPORTANT: 두 cell type이 모두 해당 region에 존재하는지 확인
         if (!from_type %in% available_types || !to_type %in% available_types) {
             next
         }
         
-        # Get cell indices
+        # 각 cell type의 인덱스 추출
         to_cells_idx <- which(
             spe_region$region == reg & 
             spe_region$cluster_celltype == to_type
@@ -178,8 +161,9 @@ for (reg in regions) {
             spe_region$cluster_celltype == from_type
         )
         
-        # Skip if too few cells
-        if (length(to_cells_idx) < 5 || length(from_cells_idx) < 5) {
+        # NOTE: 세포 수가 너무 적으면 건너뜀 (최소 5개)
+        if (length(to_cells_idx) < SPATIAL_PARAMS$min_cells || 
+            length(from_cells_idx) < SPATIAL_PARAMS$min_cells) {
             next
         }
         
@@ -188,7 +172,8 @@ for (reg in regions) {
             to_cells_logical <- rep(FALSE, ncol(spe_region))
             to_cells_logical[to_cells_idx] <- TRUE
             
-            # Calculate minimum distances
+            # IMPORTANT: minDistToCells() 함수로 최소 거리 계산
+            # 각 "from" 세포에서 가장 가까운 "to" 세포까지의 거리
             temp_spe <- minDistToCells(
                 spe_region,
                 x_cells = to_cells_logical,
@@ -196,18 +181,18 @@ for (reg in regions) {
                 name = "temp_dist"
             )
             
-            # Extract and summarize distances
+            # 거리 데이터 추출 및 요약
             dist_data <- colData(temp_spe)[from_cells_idx, ] %>%
                 as_tibble() %>%
                 filter(!is.na(temp_dist)) %>%
                 group_by(sample_id, group) %>%
                 summarize(
                     n_cells = n(),
-                    mean_dist = mean(temp_dist, na.rm = TRUE),
-                    median_dist = median(temp_dist, na.rm = TRUE),
-                    sd_dist = sd(temp_dist, na.rm = TRUE),
-                    q25 = quantile(temp_dist, 0.25, na.rm = TRUE),
-                    q75 = quantile(temp_dist, 0.75, na.rm = TRUE),
+                    mean_dist = mean(temp_dist, na.rm = TRUE),      # 평균 거리
+                    median_dist = median(temp_dist, na.rm = TRUE),  # 중앙값
+                    sd_dist = sd(temp_dist, na.rm = TRUE),          # 표준편차
+                    q25 = quantile(temp_dist, 0.25, na.rm = TRUE),  # 1사분위수
+                    q75 = quantile(temp_dist, 0.75, na.rm = TRUE),  # 3사분위수
                     .groups = "drop"
                 ) %>%
                 mutate(
@@ -217,22 +202,19 @@ for (reg in regions) {
                     category = category
                 )
             
-            # Store results
+            # 결과 저장 (고유 키 생성)
             if (nrow(dist_data) > 0) {
                 key <- paste(reg, from_type, to_type, sep = "___")
                 within_results[[key]] <- dist_data
             }
         }, error = function(e) {
+            # 에러 발생 시 건너뜀
             NULL
         })
     }
 }
 
 end_time <- Sys.time()
-total_time <- as.numeric(difftime(end_time, start_time, units = "mins"))
-
-cat(sprintf("\nDistance calculation complete: %.1f minutes\n", total_time))
-cat(sprintf("Successfully calculated: %d combinations\n", length(within_results)))
 
 ################################################################################
 # 5. Combine and Save Raw Results
@@ -241,12 +223,11 @@ cat(sprintf("Successfully calculated: %d combinations\n", length(within_results)
 if (length(within_results) > 0) {
     within_all <- bind_rows(within_results)
     
+    # IMPORTANT: 원본 거리 측정 데이터 저장 (모든 후속 분석의 기초)
     write_csv(
         within_all,
         "./figure/06_spatial_analysis/region_distances_raw.csv"
     )
-    
-    cat(sprintf("Total distance measurements: %d\n", nrow(within_all)))
     
 } else {
     stop("No distance results calculated. Check cell type definitions and region assignments.")
@@ -256,7 +237,7 @@ if (length(within_results) > 0) {
 # 6. Statistical Testing
 ################################################################################
 
-# Determine valid pairs (minimum sample size per group)
+# 그룹별 샘플 수 확인
 sample_counts <- within_all %>%
     group_by(region, from_celltype, to_celltype, group) %>%
     summarize(n_samples = n(), .groups = "drop") %>%
@@ -267,65 +248,35 @@ sample_counts <- within_all %>%
         names_prefix = "n_"
     )
 
-# Filter for sufficient sample sizes
+# IMPORTANT: 통계 검정을 위한 최소 샘플 수 필터링
+# 각 그룹에 최소 2개 이상의 샘플이 있어야 검정 가능
 valid_pairs <- sample_counts %>%
     filter(if_all(starts_with("n_"), ~ . >= SPATIAL_PARAMS$min_samples))
 
-cat(sprintf("\nValid pairs for testing: %d out of %d\n",
-            nrow(valid_pairs), nrow(sample_counts)))
-
 if (nrow(valid_pairs) > 0) {
     
-    # Perform Wilcoxon test
+    # Wilcoxon rank-sum test (non-parametric test for two groups)
     stats_results <- within_all %>%
         semi_join(valid_pairs, by = c("region", "from_celltype", "to_celltype")) %>%
         group_by(region, from_celltype, to_celltype, category) %>%
         wilcox_test(mean_dist ~ group) %>%
-        adjust_pvalue(method = "BH") %>%
+        adjust_pvalue(method = "BH") %>%  # Benjamini-Hochberg FDR correction
         add_significance("p.adj") %>%
         arrange(p.adj)
     
-    # Save statistics
+    # IMPORTANT: 통계 결과 저장
     write_csv(
         stats_results,
         "./figure/06_spatial_analysis/region_distances_statistics.csv"
     )
     
-    # Print top results
-    cat("\nTop 20 Most Significant Results:\n")
-    print(head(stats_results, 20), n = 20)
-    
-    # Summary of significant results
-    sig_results <- stats_results %>% filter(p.adj < 0.05)
-    
-    if (nrow(sig_results) > 0) {
-        cat(sprintf("\n\nSignificant pairs (p.adj < 0.05): %d\n", nrow(sig_results)))
-        
-        sig_by_category <- sig_results %>%
-            group_by(category) %>%
-            summarize(n_sig = n(), .groups = "drop") %>%
-            arrange(desc(n_sig))
-        
-        cat("\nBy Category:\n")
-        for (i in 1:nrow(sig_by_category)) {
-            cat(sprintf("  * %s: %d\n",
-                        sig_by_category$category[i],
-                        sig_by_category$n_sig[i]))
-        }
-    } else {
-        cat("\nNo significant results after FDR correction.\n")
-        cat("Consider examining effect sizes in Step 07.\n")
-    }
-    
-} else {
-    cat("\nInsufficient sample sizes for statistical testing.\n")
 }
 
 ################################################################################
 # 7. Preliminary Visualization
 ################################################################################
 
-# Category-wise comparison
+# Category-wise comparison (카테고리별 전체 비교)
 if (nrow(within_all) > 0) {
     
     category_summary <- within_all %>%
@@ -333,7 +284,7 @@ if (nrow(within_all) > 0) {
         summarize(
             n = n(),
             mean_dist = mean(mean_dist, na.rm = TRUE),
-            se_dist = sd(mean_dist, na.rm = TRUE) / sqrt(n()),
+            se_dist = sd(mean_dist, na.rm = TRUE) / sqrt(n()),  # Standard error
             .groups = "drop"
         )
     
@@ -348,7 +299,7 @@ if (nrow(within_all) > 0) {
             width = 0.3
         ) +
         scale_fill_manual(
-            values = metadata(spe)$color_vectors$group[SPATIAL_PARAMS$groups_to_compare]
+            values = c("Wt" = "#4DAF4A", "Ko" = "#E41A1C")
         ) +
         theme_classic(base_size = 13) +
         theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 11)) +
@@ -369,66 +320,70 @@ if (nrow(within_all) > 0) {
     )
 }
 
-# Top pairs boxplot (if significant results exist)
-if (exists("sig_results") && nrow(sig_results) > 0) {
+# Top significant pairs boxplot (유의미한 결과가 있을 경우)
+if (exists("stats_results") && nrow(stats_results) > 0) {
     
-    n_plots <- min(12, nrow(sig_results))
-    plot_list <- list()
+    # 유의미한 결과만 필터링
+    sig_results <- stats_results %>% filter(p.adj < 0.05)
     
-    for (i in 1:n_plots) {
-        data_sub <- within_all %>%
-            filter(
-                region == sig_results$region[i],
-                from_celltype == sig_results$from_celltype[i],
-                to_celltype == sig_results$to_celltype[i]
-            )
+    if (nrow(sig_results) > 0) {
+        n_plots <- min(12, nrow(sig_results))
+        plot_list <- list()
         
-        p <- ggplot(data_sub, aes(x = group, y = mean_dist, fill = group)) +
-            geom_boxplot(outlier.shape = NA, alpha = 0.7) +
-            geom_jitter(width = 0.2, size = 1.5, alpha = 0.6) +
-            scale_fill_manual(
-                values = metadata(spe)$color_vectors$group[SPATIAL_PARAMS$groups_to_compare]
-            ) +
-            theme_classic(base_size = 9) +
-            labs(
-                title = sprintf("%s\n%s -> %s (p=%.1e)",
-                                sig_results$region[i],
-                                sig_results$from_celltype[i],
-                                sig_results$to_celltype[i],
-                                sig_results$p.adj[i]),
-                x = "",
-                y = "Distance (μm)"
-            ) +
-            stat_compare_means(
-                method = "wilcox.test",
-                label = "p.format",
-                size = 2.5
-            ) +
-            theme(
-                legend.position = "none",
-                plot.title = element_text(size = 8, face = "bold")
-            )
+        for (i in 1:n_plots) {
+            data_sub <- within_all %>%
+                filter(
+                    region == sig_results$region[i],
+                    from_celltype == sig_results$from_celltype[i],
+                    to_celltype == sig_results$to_celltype[i]
+                )
+            
+            p <- ggplot(data_sub, aes(x = group, y = mean_dist, fill = group)) +
+                geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+                geom_jitter(width = 0.2, size = 1.5, alpha = 0.6) +
+                scale_fill_manual(values = c("Wt" = "#4DAF4A", "Ko" = "#E41A1C")) +
+                theme_classic(base_size = 9) +
+                labs(
+                    title = sprintf("%s\n%s -> %s (p=%.1e)",
+                                    sig_results$region[i],
+                                    sig_results$from_celltype[i],
+                                    sig_results$to_celltype[i],
+                                    sig_results$p.adj[i]),
+                    x = "",
+                    y = "Distance (μm)"
+                ) +
+                stat_compare_means(
+                    method = "wilcox.test",
+                    label = "p.format",
+                    size = 2.5
+                ) +
+                theme(
+                    legend.position = "none",
+                    plot.title = element_text(size = 8, face = "bold")
+                )
+            
+            plot_list[[i]] <- p
+        }
         
-        plot_list[[i]] <- p
+        p_combined <- wrap_plots(plot_list, ncol = 4)
+        
+        ggsave(
+            filename = "./figure/06_spatial_analysis/02_significant_pairs_boxplot.tiff",
+            plot = p_combined,
+            width = 16,
+            height = 12,
+            dpi = 400,
+            compression = "lzw"
+        )
     }
-    
-    p_combined <- wrap_plots(plot_list, ncol = 4)
-    
-    ggsave(
-        filename = "./figure/06_spatial_analysis/02_significant_pairs_boxplot.tiff",
-        plot = p_combined,
-        width = 16,
-        height = 12,
-        dpi = 400,
-        compression = "lzw"
-    )
 }
 
 ################################################################################
 # 8. Clean Up
 ################################################################################
 
-rm(spe_region, within_results, temp_spe)
+rm(spe_region, within_results)
+if (exists("temp_spe")) rm(temp_spe)
 gc()
 
 # NOTE: Next step is 07_advanced_visualization.R
