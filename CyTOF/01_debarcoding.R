@@ -225,6 +225,3 @@ print(paste("Exported", length(ids), "debarcoded samples to", output_dir))
 # Save debarcoded SCE object
 save(sce, file = "./data/sce_debarcoded.RData")
 
-################################################################################
-# End of Step 01
-################################################################################
