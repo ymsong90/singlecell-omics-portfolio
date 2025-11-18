@@ -548,4 +548,3 @@ write.csv(
 rm(celltype_mean, mat, mat_z, ht, images_subset, masks_subset)
 gc()
 
-# NOTE: Next step is 06_spatial_analysis.R
