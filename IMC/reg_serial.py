@@ -51,22 +51,7 @@ from PIL import Image
 ################################################################################
 
 def load_images(folder):
-    """
-    Scan folder and separate ROI files from slide files.
-    
-    File naming convention:
-        - ROI files: *_XXX_YYY.tif (e.g., NHS_001_001.tif)
-        - Slide files: *.tif (any other TIFF files)
-    
-    IMPORTANT: ROI files must match the pattern *_[0-9]{3}_[0-9]{3}.tif
-    
-    Args:
-        folder: Path to directory containing images
-        
-    Returns:
-        roi_files: List of ROI file paths
-        slide_files: List of slide file paths
-    """
+   
     from pathlib import Path
     import re
 
@@ -86,40 +71,12 @@ def load_images(folder):
 
 
 def strip_suffix(p: Path):
-    """
-    Remove the last _XXX suffix from filename stem.
-    
-    Examples:
-        NHS_001_001 -> NHS_001
-        sample_003_002 -> sample_003
-        
-    Args:
-        p: Path object
-        
-    Returns:
-        Filename stem without last _XXX suffix
-    """
+
     return re.sub(r'_[0-9]{3}$', '', p.stem)
 
 
 def match_pairs(folder: Path):
-    """
-    Automatically match ROI files to corresponding slide files.
-    
-    Matching logic:
-        1. Strip last _XXX from ROI filename (e.g., NHS_001_001 -> NHS_001)
-        2. Try exact match: NHS_001.tif
-        3. If not found, try numeric prefix match: 12345 -> 12345.tif
-        4. If not found, try closest match with same prefix: 12345 -> 12345_*.tif
-    
-    Args:
-        folder: Path to directory containing images
-        
-    Returns:
-        Dictionary mapping ROI path to slide path
-        
-    NOTE: Unmatched ROI files will be reported in console output
-    """
+
     roi_files, slide_files = load_images(folder)
     pairs = {}
     
@@ -165,20 +122,7 @@ def match_pairs(folder: Path):
 
 
 def load_rgb(path):
-    """
-    Load image and convert to RGB format.
-    
-    Handles multiple image formats:
-        - Grayscale: Convert to RGB
-        - RGBA: Drop alpha channel
-        - BGR (OpenCV default): Convert to RGB
-    
-    Args:
-        path: Path to image file
-        
-    Returns:
-        RGB image as uint8 numpy array
-    """
+
     # Try OpenCV first (faster for most formats)
     img = cv2.imread(str(path))
     if img is not None:
@@ -199,37 +143,7 @@ def load_rgb(path):
 ################################################################################
 
 def align_and_crop(roi_img, slide_img, slide_path, output_dir):
-    """
-    Interactive image registration using napari GUI with manual transform.
-    
-    Workflow:
-        1. Display ROI (fixed) and slide (transformable) layers
-        2. User manually aligns slide using mouse/controls
-        3. Real-time visualization with ROI boundary overlay
-        4. Save registered image using pixel-wise remapping
-    
-    Interactive controls:
-        - Mouse drag: Translate slide layer
-        - Shift + drag: Rotate
-        - Ctrl + drag: Zoom
-        - Opacity slider: Adjust layer transparency
-        - Rotation input: Numeric angle specification
-        - Press 'S' or click button: Save and exit
-    
-    IMPORTANT: Uses cv2.remap for pixel-wise remapping
-        - Each ROI pixel is mapped to corresponding slide coordinate
-        - BORDER_REPLICATE fills empty regions with edge pixels
-        - Preserves sub-pixel accuracy from napari transform
-    
-    Args:
-        roi_img: Reference ROI image (fixed, uint8 RGB)
-        slide_img: Moving slide image (transformable, uint8 RGB)
-        slide_path: Original slide file path (for DPI extraction)
-        output_dir: Output directory for results
-        
-    Returns:
-        Registered image array if saved, None if cancelled
-    """
+
     try:
         import napari
         from qtpy.QtWidgets import (
@@ -474,13 +388,7 @@ def batch_process(folder_path, output_dir):
 ################################################################################
 
 def main():
-    """
-    Main entry point for command line execution.
     
-    Commands:
-        single: Process a single ROI-slide pair
-        batch: Process all pairs in a directory
-    """
     parser = argparse.ArgumentParser(
         description="Interactive image registration using napari"
     )
