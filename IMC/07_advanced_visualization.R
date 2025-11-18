@@ -573,5 +573,3 @@ write_csv(
 
 rm(effect_size_data, volcano_data, heatmap_data, ht)
 gc()
-
-# NOTE: Pipeline complete!
