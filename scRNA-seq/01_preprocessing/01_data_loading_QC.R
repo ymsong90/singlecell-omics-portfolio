@@ -175,7 +175,3 @@ save(porcn.combined, file = "./data/porcn.combined_QC.RData")
 # Clean up
 rm(porcn_wt, porcn_ko, vln_plot, vln_plot_filtered, plot1, plot2)
 gc()
-
-################################################################################
-# End of Step 01
-################################################################################
