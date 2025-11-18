@@ -133,8 +133,8 @@ pca_before <- DimPlot(
 # 6. Baseline Clustering (Without Harmony)
 ################################################################################
 
-# NOTE: This is for comparison purposes
-# Helps visualize batch effects before correction
+# NOTE: for comparison purposes
+# visualize batch effects before correction
 porcn.combined <- FindNeighbors(
     object = porcn.combined,
     dims   = PARAMS$use_pcs
@@ -317,7 +317,3 @@ rm(porcn.combined, umap_no_harmony, umap_harmony_clusters,
    comparison_plot, vln_qc, pca_before, elbow_plot, 
    plot_var_features, plot_var_labeled)
 gc()
-
-################################################################################
-# End of Step 02
-################################################################################
